@@ -105,7 +105,7 @@ public class accountTestClass {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(myProfile.toString()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$username").value("User_one"))
+                .andExpect(jsonPath("$username").value("User_one"));
     }
 
 }
