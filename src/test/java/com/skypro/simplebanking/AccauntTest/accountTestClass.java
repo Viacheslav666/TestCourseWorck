@@ -99,13 +99,14 @@ public class accountTestClass {
     @Test
     @WithMockUser(roles = "USER")
     void getMyProfile_Test_OK() throws Exception {
+
         ObjectMapper objectMapper = new ObjectMapper();
         String myProfile = objectMapper.writeValueAsString(userDTO());
         mockMvc.perform(get("/user/me")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(myProfile.toString()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$username").value("User_one"));
+                .andExpect(jsonPath("$username").value("User_one"))
     }
 
 }
