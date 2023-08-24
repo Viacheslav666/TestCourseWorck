@@ -3,29 +3,27 @@ package com.skypro.simplebanking.AccauntTest;
 import com.skypro.simplebanking.controller.UserController;
 import com.skypro.simplebanking.dto.*;
 import com.skypro.simplebanking.entity.AccountCurrency;
+import com.skypro.simplebanking.entity.User;
+import com.skypro.simplebanking.repository.AccountRepository;
+import com.skypro.simplebanking.repository.UserRepository;
+import com.skypro.simplebanking.service.UserService;
 import net.minidev.json.JSONObject;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.security.access.annotation.Secured;
 import org.springframework.security.test.context.support.WithMockUser;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultMatcher;
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.shaded.com.fasterxml.jackson.core.JsonProcessingException;
+import org.springframework.util.Base64Utils;
 import org.testcontainers.shaded.com.fasterxml.jackson.databind.ObjectMapper;
 
-import javax.swing.plaf.ListUI;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -42,16 +40,56 @@ public class accountTestClass {
     UserController userControllerTest;
     @Autowired
     MockMvc mockMvc;
+    @Mock
+    BankingUserDetails userDetails;
+    @Autowired
+    private UserService userService;
+    @Autowired
+    private UserRepository userRepository;
+    @Autowired
+    private AccountRepository accountRepository;
 
-    private static  List<ListUserDTO> listUserDto() {
+
+    private static List<ListUserDTO> listUserDto() {
         List<ListUserDTO> listUserDTOS = new ArrayList<>();
-        listUserDTOS.add(new ListUserDTO(1,"user_one", listAccountDTO()));
-        listUserDTOS.add(new ListUserDTO(2,"user_two", listAccountDTO()));
-        listUserDTOS.add(new ListUserDTO(3,"user_three", listAccountDTO()));
+        listUserDTOS.add(new ListUserDTO(1, "user_one", listAccountDTO()));
+        listUserDTOS.add(new ListUserDTO(2, "user_two", listAccountDTO()));
+        listUserDTOS.add(new ListUserDTO(3, "user_three", listAccountDTO()));
         return listUserDTOS;
     }
 
-    private static  List<ListAccountDTO> listAccountDTO() {
+    private String getBasicAuthenticationHeader(String username, String password) {
+        return "Basic " + Base64Utils.encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
+    }
+    @BeforeEach
+    void createRepository() {
+        userService.createUser("username1","password1" );
+        userService.createUser("username2","password2" );
+        userService.createUser("username3","password3" );
+        userService.createUser("username4","password4" );
+        userService.createUser("username5","password5" );
+    }
+    @AfterEach
+    void cleanRepository() {
+        userRepository.deleteAll();
+        accountRepository.deleteAll();
+    }
+
+
+    private User getUserByName(String username){
+        return userRepository.findByUsername(username).orElseThrow();
+    }
+    private long getUserIdByUserName(String username){
+        return getUserByName(username).getId();
+    }
+    private long getAccountIdByUsername(String username){
+        long userId = getUserIdByUserName(username);
+        long ost = userId % userRepository.count();
+        long count = (userId - ost) / userRepository.count();
+        return count * 3 * userRepository.count() + ost*3;
+    }
+
+    private static List<ListAccountDTO> listAccountDTO() {
         List<ListAccountDTO> listAccountDTOS = new ArrayList<>();
         listAccountDTOS.add(new ListAccountDTO(1L, AccountCurrency.EUR));
         listAccountDTOS.add(new ListAccountDTO(2L, AccountCurrency.RUB));
@@ -61,14 +99,14 @@ public class accountTestClass {
 
     private static List<AccountDTO> accountDTOList() {
         List<AccountDTO> accountDTOList = new ArrayList<>();
-        accountDTOList.add(new AccountDTO(1L,2020L,AccountCurrency.EUR));
+        accountDTOList.add(new AccountDTO(1L, 2020L, AccountCurrency.EUR));
         return accountDTOList;
     }
 
 
-    private static  UserDTO userDTO() {
+    private static UserDTO userDTO() {
 
-    return new UserDTO(1L, "User_one", accountDTOList());
+        return new UserDTO(1L, "User_one", accountDTOList());
     }
 
     @Test
@@ -82,6 +120,30 @@ public class accountTestClass {
                         .content(createUserRequest.toString()))
                 .andExpect(status().isOk());
     }
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void createUser_Test_TrowUserAlreadyExistsException() throws Exception {
+        JSONObject userRequest = new JSONObject();
+        userRequest.put("username", "username1");
+        userRequest.put("password", "password1");
+
+        mockMvc.perform(post("/user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(userRequest.toString()))
+                .andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    void depositToAccount_OK() throws Exception {
+        JSONObject balanceChangeRequest = new JSONObject();
+        balanceChangeRequest.put("amount", 10000L);
+
+        mockMvc.perform(post("/account/deposit/{id}", getAccountIdByUsername("username1"))
+                        .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(balanceChangeRequest.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.amount").value(10001));}
 
     @Test
     @WithMockUser(roles = "USER")
@@ -89,24 +151,68 @@ public class accountTestClass {
         ObjectMapper objectMapper = new ObjectMapper();
         String listUserDto = objectMapper.writeValueAsString(listUserDto());
         mockMvc.perform(get("/user/list")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(listUserDto.toString()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(listUserDto.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$.length()").value(0));
+                .andExpect(jsonPath("$.length()").value(5));
     }
+
 
     @Test
     @WithMockUser(roles = "USER")
     void getMyProfile_Test_OK() throws Exception {
-
-        ObjectMapper objectMapper = new ObjectMapper();
-        String myProfile = objectMapper.writeValueAsString(userDTO());
         mockMvc.perform(get("/user/me")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(myProfile.toString()))
+                        .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$username").value("User_one"))
+                .andExpect(jsonPath("$.username").value("username1"))
+                .andExpect(jsonPath("$.accounts.length()").value(3));
     }
 
+
+    @Test
+    @WithMockUser("USER")
+    void withdrawFromAccount_Ok() {
+
+    }
+    @Test
+    void getTranzaction_Test_OK() throws Exception {
+        JSONObject transfer = new JSONObject();
+        transfer.put("fromAccountId", getAccountIdByUsername("username1"));
+        transfer.put("toUserId", getUserIdByUserName("username2"));
+        transfer.put("toAccountId", getAccountIdByUsername("username2"));
+        transfer.put("amount", 1);
+
+        mockMvc.perform(post("/transfer")
+                        .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(transfer.toString()))
+                .andExpect(status().isOk());
+    }
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void givenUsers_AdminNoAccess_Error403() throws Exception {
+        mockMvc.perform(get("/user/list"))
+                .andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    void getTranzaction_Test_WrongAccountCurrency_Status400() throws Exception {
+
+        JSONObject transfer = new JSONObject();
+        transfer.put("fromAccountId", 1);
+        transfer.put("toUserId", 2);
+        transfer.put("toAccountId", 5);
+        transfer.put("amount", 1);
+
+        mockMvc.perform(post("/transfer")
+                        .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(transfer.toString()))
+                .andExpect(status().is4xxClientError());
+    }
+
+
+
+    
 }
