@@ -35,9 +35,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 
-public class accountTestClass {
-    @Autowired
-    UserController userControllerTest;
+public class AccountTestClass {
+
     @Autowired
     MockMvc mockMvc;
     @Mock
@@ -110,24 +109,23 @@ public class accountTestClass {
     }
 
     @Test
-    @WithMockUser(roles = "ADMIN")
     void createUser_Ok() throws Exception {
         JSONObject createUserRequest = new JSONObject();
         createUserRequest.put("username", "username");
         createUserRequest.put("password", "password");
-        mockMvc.perform(post("/user")//создаем запрос
-                        .contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(post("/user")
+                        .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1"))
+                        .contentType(MediaType.APPLICATION_JSON)//создаем запрос
                         .content(createUserRequest.toString()))
                 .andExpect(status().isOk());
     }
     @Test
-    @WithMockUser(roles = "ADMIN")
     void createUser_Test_TrowUserAlreadyExistsException() throws Exception {
         JSONObject userRequest = new JSONObject();
         userRequest.put("username", "username1");
         userRequest.put("password", "password1");
-
         mockMvc.perform(post("/user")
+                        .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(userRequest.toString()))
                 .andExpect(status().is4xxClientError());
@@ -137,7 +135,6 @@ public class accountTestClass {
     void depositToAccount_OK() throws Exception {
         JSONObject balanceChangeRequest = new JSONObject();
         balanceChangeRequest.put("amount", 10000L);
-
         mockMvc.perform(post("/account/deposit/{id}", getAccountIdByUsername("username1"))
                         .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -146,11 +143,11 @@ public class accountTestClass {
                 .andExpect(jsonPath("$.amount").value(10001));}
 
     @Test
-    @WithMockUser(roles = "USER")
     void getAllUsers_Test_Ok() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
         String listUserDto = objectMapper.writeValueAsString(listUserDto());
         mockMvc.perform(get("/user/list")
+                        .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(listUserDto.toString()))
                 .andExpect(status().isOk())
@@ -160,7 +157,6 @@ public class accountTestClass {
 
 
     @Test
-    @WithMockUser(roles = "USER")
     void getMyProfile_Test_OK() throws Exception {
         mockMvc.perform(get("/user/me")
                         .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1")))
@@ -170,11 +166,6 @@ public class accountTestClass {
     }
 
 
-    @Test
-    @WithMockUser("USER")
-    void withdrawFromAccount_Ok() {
-
-    }
     @Test
     void getTranzaction_Test_OK() throws Exception {
         JSONObject transfer = new JSONObject();
@@ -197,8 +188,7 @@ public class accountTestClass {
     }
 
     @Test
-    void getTranzaction_Test_WrongAccountCurrency_Status400() throws Exception {
-
+    void getTranzaction_noOK_WrongAccountCurrency_Status400() throws Exception {
         JSONObject transfer = new JSONObject();
         transfer.put("fromAccountId", 1);
         transfer.put("toUserId", 2);
@@ -211,8 +201,40 @@ public class accountTestClass {
                         .content(transfer.toString()))
                 .andExpect(status().is4xxClientError());
     }
+    @Test
+    public void withdrawToAccount_OK() throws Exception {
+        JSONObject balanceChangeRequest = new JSONObject();
+        balanceChangeRequest.put("amount", 1L);
+        mockMvc.perform(post("/account/withdraw/{id}", getAccountIdByUsername("username1"))
+                        .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(balanceChangeRequest.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.amount").value(0L));
+    }
 
+    @Test
+    void withdrawFromAccount_noOK_TrowInsufficientFundsException() throws Exception {
+        JSONObject balanceChangeRequest = new JSONObject();
+        balanceChangeRequest.put("amount", 100L);
 
+        mockMvc.perform(post("/account/withdraw/{id}", 1)
+                        .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(balanceChangeRequest.toString()))
+                .andExpect(status().is4xxClientError());
 
-    
+    }
+    @Test
+    public void getUserAccount_ОK() throws Exception {
+        mockMvc.perform(get("/account/{id}", getAccountIdByUsername("username1"))
+                .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1")))
+                .andExpect(status().isOk());
+    }
+    @Test
+    public void getUserAccount_noOk_WhenAccountNotFound() throws Exception {
+        mockMvc.perform(get("/account/{id}", 0L)
+                        .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1")))
+                .andExpect(status().isNotFound());
+    }
 }
