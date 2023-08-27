@@ -114,7 +114,7 @@ public class AccountTestClass {
         createUserRequest.put("username", "username");
         createUserRequest.put("password", "password");
         mockMvc.perform(post("/user")
-                        .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1"))
+                        .header(HttpHeaders.AUTHORIZATION, getBasicAuthenticationHeader("username1", "password1"), "X-SECURITY-ADMIN-KEY")
                         .contentType(MediaType.APPLICATION_JSON)//создаем запрос
                         .content(createUserRequest.toString()))
                 .andExpect(status().isOk());
